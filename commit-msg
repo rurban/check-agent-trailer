@@ -1,18 +1,32 @@
 #!/usr/bin/env bash
 # commit-msg hook: validate Co-authored-by trailers
 #
-# Format: Co-authored-by: <agent> + <model> <<email>>
+# Format: Co-authored-by: <agent> + <model>[/<level>] <<email>>  or  <agent> <model>[/<level>] <<email>>
 #
-# Known agents:  omp, codewhale, Claude, opencode
+# Known agents:  omp, codewhale, Claude, opencode, Codex, Windsurf, Cursor
 #
 # Known model vendors and their email domains:
 #   DeepSeek           -> @deepseek.com
 #   Claude / Anthropic -> @anthropic.com
 #   OpenAI / GPT       -> @openai.com
-#   opencode           -> @anthropic.com
+#   opencode           -> @openai.com
+#   Google / Gemini    -> @google.com
+#   xAI / Grok         -> @x.ai
+#   Mistral            -> @mistral.ai
+#   Meta / Llama       -> @meta.com
+#   Qwen               -> @alibaba.com
+#   Kimi               -> @moonshot.cn
+#   GLM / Zhipu        -> @zhipuai.cn
+#   Amazon / Nova      -> @amazon.com
+#   Cohere / Command   -> @cohere.com
+#   Groq               -> @groq.com
+#   Cerebras           -> @cerebras.ai
+#   MiniMax            -> @minimax.ai
 #
 # Model names must include version/descriptor (e.g. "v4 Pro", "Sonnet 4"),
 # not just the bare vendor name (e.g. "DeepSeek" alone is rejected).
+#
+# Optional thinking level suffix: /off /minimal /low /medium /high /xhigh
 #
 # Install via pre-commit (.pre-commit-config.yaml):
 #   - repo: https://github.com/rurban/check-agent-trailer
@@ -28,12 +42,13 @@ if [ -z "$COMMIT_MSG_FILE" ]; then
     exit 1
 fi
 
-trailer=$(grep "^Co-authored-by:" "$COMMIT_MSG_FILE" | tail -1)
+trailer=$(grep "^Co-authored-by:" "$COMMIT_MSG_FILE" | tail -1 || true)
 
 if [ -z "$trailer" ]; then
     echo "ERROR: Missing Co-authored-by: trailer in commit message" >&2
-    echo "  Format: Co-authored-by: <agent> + <model> <email@domain>" >&2
+    echo "  Format: Co-authored-by: <agent> + <model> <email@domain>  or  <agent> <model> <email@domain>" >&2
     echo "  Example: Co-authored-by: omp + DeepSeek v4 Pro <deepseek-v4-pro@deepseek.com>" >&2
+    echo "  Example: Co-authored-by: omp DeepSeek v4 Pro <deepseek-v4-pro@deepseek.com>" >&2
     exit 1
 fi
 
@@ -45,18 +60,28 @@ if [ -z "$email" ]; then
 fi
 
 name=$(echo "$trailer" | sed -n 's/^Co-authored-by: \(.*\) <.*/\1/p')
-if [[ "$name" != *" + "* ]]; then
-    echo "ERROR: Co-authored-by must include both agent and model separated by ' + '" >&2
+if [[ "$name" == *" + "* ]]; then
+    agent="${name%% + *}"
+    model="${name#* + }"
+elif [[ "$name" == *" "* ]]; then
+    agent="${name%% *}"
+    model="${name#* }"
+else
+    echo "ERROR: Co-authored-by must include both agent and model separated by ' + ' or space" >&2
     echo "  Got:      $name" >&2
-    echo "  Expected: <agent> + <model>" >&2
+    echo "  Expected: <agent> + <model>  or  <agent> <model>" >&2
     exit 1
 fi
 
-agent="${name%% + *}"
-model="${name#* + }"
+# ── strip optional thinking level suffix (/off /minimal /low /medium /high /xhigh) ─
+thinking_level=""
+if [[ "$model" =~ ^(.*)/(off|minimal|low|medium|high|xhigh)$ ]]; then
+    model="${BASH_REMATCH[1]}"
+    thinking_level="${BASH_REMATCH[2]}"
+fi
 
 # ── known agents ─────────────────────────────────────────────────
-known_agents=("omp" "codewhale" "Claude" "opencode")
+known_agents=("omp" "codewhale" "Claude" "opencode" "Codex" "Windsurf" "Cursor")
 agent_ok=0
 for a in "${known_agents[@]}"; do
     if [ "$agent" = "$a" ]; then agent_ok=1; break; fi
@@ -68,7 +93,7 @@ if [ "$agent_ok" -ne 1 ]; then
 fi
 
 # ── model must include version, not bare vendor ──────────────────
-bare_vendors=("DeepSeek" "deepseek" "Claude" "claude" "GPT" "gpt" "OpenAI" "openai" "opencode" "OpenCode")
+bare_vendors=("DeepSeek" "deepseek" "Claude" "claude" "GPT" "gpt" "OpenAI" "openai" "opencode" "OpenCode" "Gemini" "gemini" "Gemma" "gemma" "Grok" "grok" "Mistral" "mistral" "Llama" "llama" "Qwen" "qwen" "Kimi" "kimi" "GLM" "glm" "Nova" "nova" "Cohere" "cohere" "Command" "command" "Groq" "groq" "Cerebras" "cerebras" "MiniMax" "minimax" "Amazon" "amazon")
 for bv in "${bare_vendors[@]}"; do
     if [ "$model" = "$bv" ]; then
         echo "ERROR: Model name must include version/descriptor, not just vendor" >&2
@@ -91,6 +116,48 @@ declare -A vendor_domains=(
     ["*openai*"]="openai.com"
     ["*opencode*"]="openai.com"
     ["*OpenCode*"]="openai.com"
+    ["*Codex*"]="openai.com"
+    ["*codex*"]="openai.com"
+    ["*Gemini*"]="google.com"
+    ["*gemini*"]="google.com"
+    ["*Gemma*"]="google.com"
+    ["*gemma*"]="google.com"
+    ["*Google*"]="google.com"
+    ["*google*"]="google.com"
+    ["*Grok*"]="x.ai"
+    ["*grok*"]="x.ai"
+    ["*xAI*"]="x.ai"
+    ["*xai*"]="x.ai"
+    ["*Mistral*"]="mistral.ai"
+    ["*mistral*"]="mistral.ai"
+    ["*Llama*"]="meta.com"
+    ["*llama*"]="meta.com"
+    ["*Meta*"]="meta.com"
+    ["*meta*"]="meta.com"
+    ["*Qwen*"]="alibaba.com"
+    ["*qwen*"]="alibaba.com"
+    ["*Kimi*"]="moonshot.cn"
+    ["*kimi*"]="moonshot.cn"
+    ["*GLM*"]="zhipuai.cn"
+    ["*glm*"]="zhipuai.cn"
+    ["*Zhipu*"]="zhipuai.cn"
+    ["*zhipu*"]="zhipuai.cn"
+    ["*Nova*"]="amazon.com"
+    ["*nova*"]="amazon.com"
+    ["*Titan*"]="amazon.com"
+    ["*titan*"]="amazon.com"
+    ["*Amazon*"]="amazon.com"
+    ["*amazon*"]="amazon.com"
+    ["*Cohere*"]="cohere.com"
+    ["*cohere*"]="cohere.com"
+    ["*Command*"]="cohere.com"
+    ["*command*"]="cohere.com"
+    ["*Groq*"]="groq.com"
+    ["*groq*"]="groq.com"
+    ["*Cerebras*"]="cerebras.ai"
+    ["*cerebras*"]="cerebras.ai"
+    ["*MiniMax*"]="minimax.ai"
+    ["*minimax*"]="minimax.ai"
 )
 
 domain="${email##*@}"

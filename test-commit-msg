@@ -1,0 +1,165 @@
+#!/usr/bin/env bash
+# test-commit-msg — test suite for the commit-msg hook
+set -uo pipefail
+
+HOOK="$PWD/commit-msg"
+PASS=0
+FAIL=0
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "$TMPDIR"' EXIT
+
+msg_file="$TMPDIR/COMMIT_EDITMSG"
+
+run_test() {
+    local desc="$1" trailer="$2" want_exit="${3:-0}"
+    echo "$trailer" > "$msg_file"
+    local actual=0
+    "$HOOK" "$msg_file" >/dev/null 2>&1 || actual=$?
+    if [ "$actual" -eq "$want_exit" ]; then
+        echo "  PASS  $desc"
+        ((PASS++))
+    else
+        echo "  FAIL  $desc  (expected exit=$want_exit, got exit=$actual)"
+        echo "        trailer: $trailer"
+        ((FAIL++))
+    fi
+}
+
+run_test_stderr() {
+    local desc="$1" trailer="$2" want_substr="$3"
+    echo "$trailer" > "$msg_file"
+    local stderr
+    stderr=$("$HOOK" "$msg_file" 2>&1) || true
+    if echo "$stderr" | grep -qF "$want_substr"; then
+        echo "  PASS  $desc"
+        ((PASS++))
+    else
+        echo "  FAIL  $desc  (stderr missing '$want_substr')"
+        echo "        stderr: $stderr"
+        ((FAIL++))
+    fi
+}
+
+echo "=== Happy paths ==="
+
+# ── agents ──
+for agent in omp codewhale Claude opencode Codex Windsurf Cursor; do
+    run_test "$agent agent (space)" \
+        "Co-authored-by: $agent DeepSeek v4 Pro <deepseek-v4-pro@deepseek.com>" 0
+    run_test "$agent agent (+)" \
+        "Co-authored-by: $agent + DeepSeek v4 Pro <deepseek-v4-pro@deepseek.com>" 0
+done
+
+# ── model vendors → domains ──
+run_test "DeepSeek → deepseek.com" \
+    "Co-authored-by: omp DeepSeek v4 Pro <ds@deepseek.com>" 0
+run_test "Claude → anthropic.com" \
+    "Co-authored-by: omp Claude Sonnet 4 <cs4@anthropic.com>" 0
+run_test "GPT → openai.com" \
+    "Co-authored-by: omp GPT-5 <gpt5@openai.com>" 0
+run_test "Gemini → google.com" \
+    "Co-authored-by: omp Gemini 2.5 Pro <gem@google.com>" 0
+run_test "Grok → x.ai" \
+    "Co-authored-by: omp Grok 4 <g4@x.ai>" 0
+run_test "Mistral → mistral.ai" \
+    "Co-authored-by: omp Mistral Large <ml@mistral.ai>" 0
+run_test "Llama → meta.com" \
+    "Co-authored-by: omp Llama 4 <l4@meta.com>" 0
+run_test "Qwen → alibaba.com" \
+    "Co-authored-by: omp Qwen 3 <q3@alibaba.com>" 0
+run_test "Kimi → moonshot.cn" \
+    "Co-authored-by: omp Kimi K2 <k2@moonshot.cn>" 0
+run_test "GLM → zhipuai.cn" \
+    "Co-authored-by: omp GLM 4.5 <g45@zhipuai.cn>" 0
+run_test "Nova → amazon.com" \
+    "Co-authored-by: omp Nova Pro <np@amazon.com>" 0
+run_test "Cohere → cohere.com" \
+    "Co-authored-by: omp Cohere Command R <cr@cohere.com>" 0
+run_test "Groq → groq.com" \
+    "Co-authored-by: omp Groq Fast <gf@groq.com>" 0
+run_test "Cerebras → cerebras.ai" \
+    "Co-authored-by: omp Cerebras Llama <cl@cerebras.ai>" 0
+run_test "MiniMax → minimax.ai" \
+    "Co-authored-by: omp MiniMax 1 <m1@minimax.ai>" 0
+
+# ── thinking levels ──
+for level in off minimal low medium high xhigh; do
+    run_test "thinking /$level (space)" \
+        "Co-authored-by: omp DeepSeek v4 Pro/$level <deepseek-v4-pro@deepseek.com>" 0
+    run_test "thinking /$level (+)" \
+        "Co-authored-by: omp + DeepSeek v4 Pro/$level <deepseek-v4-pro@deepseek.com>" 0
+done
+
+# ── unrecognised suffix treated as model text (not stripped) ──
+run_test "unrecognised /foo passes through" \
+    "Co-authored-by: omp DeepSeek v4 Pro/foo <deepseek-v4-pro@deepseek.com>" 0
+
+echo ""
+echo "=== Error paths ==="
+
+# ── missing trailer ──
+run_test_stderr "missing trailer" \
+    "" \
+    "Missing Co-authored-by"
+
+# ── no separator ──
+run_test_stderr "no separator (single word)" \
+    "Co-authored-by: singleword <x@y.com>" \
+    "must include both agent and model"
+
+# ── unknown agent ──
+run_test_stderr "unknown agent" \
+    "Co-authored-by: UnknownBot DeepSeek v4 Pro <x@deepseek.com>" \
+    "Unknown agent"
+
+# ── bare vendor ──
+for bare in DeepSeek deepseek Claude claude GPT gpt OpenAI openai \
+            Gemini gemini Grok grok Mistral mistral Llama llama \
+            Qwen qwen Kimi kimi GLM glm Nova nova Cohere cohere \
+            Groq groq Cerebras cerebras MiniMax minimax; do
+    run_test_stderr "bare vendor '$bare'" \
+        "Co-authored-by: omp $bare <x@example.com>" \
+        "Model name must include version/descriptor"
+done
+
+# ── bare vendor with thinking level also caught ──
+run_test_stderr "bare vendor + /high" \
+    "Co-authored-by: omp DeepSeek/high <x@deepseek.com>" \
+    "Model name must include version/descriptor"
+
+# ── wrong email domain ──
+run_test_stderr "DeepSeek model with wrong domain" \
+    "Co-authored-by: omp DeepSeek v4 Pro <x@openai.com>" \
+    "Wrong email domain"
+
+run_test_stderr "Claude model with wrong domain" \
+    "Co-authored-by: omp Claude Sonnet 4 <x@deepseek.com>" \
+    "Wrong email domain"
+
+run_test_stderr "Grok model with wrong domain" \
+    "Co-authored-by: omp Grok 4 <x@google.com>" \
+    "Wrong email domain"
+
+echo ""
+echo "=== Shellcheck ==="
+if command -v shellcheck &>/dev/null; then
+    if shellcheck -e SC2034,SC2053 "$HOOK"; then
+        echo "  PASS  shellcheck"
+        ((PASS++))
+    else
+        echo "  FAIL  shellcheck"
+        ((FAIL++))
+    fi
+else
+    echo "  SKIP  shellcheck not installed"
+fi
+
+echo ""
+echo "=== Results ==="
+echo "  PASS: $PASS"
+echo "  FAIL: $FAIL"
+if [ "$FAIL" -gt 0 ]; then
+    echo "  SOME TESTS FAILED"
+    exit 1
+fi
+echo "  ALL TESTS PASSED"

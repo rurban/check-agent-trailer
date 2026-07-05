@@ -4,5 +4,5 @@
   entry: commit-msg
   language: script
   stages: [commit-msg]
-  pass_filenames: false
+  pass_filenames: true
   minimum_pre_commit_version: '3.0.0'
