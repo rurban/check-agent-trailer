@@ -65,7 +65,7 @@ Co-authored-by: Cursor Grok 4/medium <grok-4@x.ai>
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/rurban/check-agent-trailer
-    rev: v0.1
+    rev: v0.2
     hooks:
       - id: check-agent-trailer
 ```
