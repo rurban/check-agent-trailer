@@ -1,0 +1,8 @@
+- id: check-agent-trailer
+  name: Check Co-authored-by trailer
+  description: Validate commit messages have a properly formatted Co-authored-by trailer
+  entry: commit-msg
+  language: script
+  stages: [commit-msg]
+  pass_filenames: false
+  minimum_pre_commit_version: '3.0.0'
