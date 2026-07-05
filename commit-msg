@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# commit-msg hook: validate Co-authored-by trailers
+#
+# Format: Co-authored-by: <agent> + <model> <<email>>
+#   agent:  omp, codewhale, Claude, opencode
+#   model:  DeepSeek v4 Pro, Claude Sonnet, etc.
+#   email:  <model-slug>@<model-domain>
+#
+# Domain mapping by model vendor:
+#   DeepSeek   -> @deepseek.com
+#   Claude     -> @anthropic.com
+#   opencode   -> @anthropic.com
+#
+# Install:
+#   ln -sf /path/to/check-agent-trailer/commit-msg .git/hooks/commit-msg
+# Or per repo:
+#   cp commit-msg .git/hooks/commit-msg
+# Or via git config (git >= 2.9):
+#   git config core.hooksPath /path/to/check-agent-trailer
+
+set -euo pipefail
+
+COMMIT_MSG_FILE="${1:-}"
+if [ -z "$COMMIT_MSG_FILE" ]; then
+    echo "ERROR: no commit message file argument" >&2
+    exit 1
+fi
+
+trailer=$(grep "^Co-authored-by:" "$COMMIT_MSG_FILE" | tail -1)
+
+if [ -z "$trailer" ]; then
+    echo "ERROR: Missing Co-authored-by: trailer in commit message" >&2
+    echo "  Format: Co-authored-by: <agent> + <model> <email@domain>" >&2
+    echo "  Example: Co-authored-by: omp + DeepSeek v4 Pro <deepseek-v4-pro@deepseek.com>" >&2
+    exit 1
+fi
+
+# Extract email
+email=$(echo "$trailer" | sed -n 's/.*<\([^>]*\)>.*/\1/p')
+if [ -z "$email" ]; then
+    echo "ERROR: Co-authored-by trailer missing email in <brackets>" >&2
+    exit 1
+fi
+
+# Extract the name part (between ": " and " <")
+name=$(echo "$trailer" | sed -n 's/^Co-authored-by: \(.*\) <.*/\1/p')
+
+# Must contain " + " separator between agent and model
+if [[ "$name" != *" + "* ]]; then
+    echo "ERROR: Co-authored-by must include both agent and model separated by ' + '" >&2
+    echo "  Got:      $name" >&2
+    echo "  Expected: <agent> + <model>" >&2
+    echo "  Example:  omp + DeepSeek v4 Pro" >&2
+    exit 1
+fi
+
+# Split into agent and model
+agent="${name%% + *}"
+model="${name#* + }"
+
+# Validate agent
+valid_agents="omp codewhale Claude opencode"
+found=0
+for a in $valid_agents; do
+    if [ "$agent" = "$a" ]; then found=1; break; fi
+done
+if [ "$found" -ne 1 ]; then
+    echo "ERROR: Unknown agent '$agent'" >&2
+    echo "  Valid agents: omp, codewhale, Claude, opencode" >&2
+    exit 1
+fi
+
+# Validate model is not empty
+if [ -z "$model" ]; then
+    echo "ERROR: Model name is empty after ' + '" >&2
+    exit 1
+fi
+
+# Model must include version/name, not just vendor
+case "$model" in
+    "DeepSeek"|"deepseek"|"Claude"|"claude"|"opencode"|"OpenCode")
+        echo "ERROR: Model name must include version, not just vendor name" >&2
+        echo "  Got:      $model" >&2
+        echo "  Expected: e.g. 'DeepSeek v4 Pro', 'Claude Sonnet 4'" >&2
+        exit 1
+        ;;
+esac
+
+# Validate email domain matches model vendor
+domain="${email##*@}"
+
+case "$model" in
+    *"DeepSeek"*|*"deepseek"*)
+        expected_domain="deepseek.com"
+        ;;
+    *"Claude"*|*"claude"*|*"opencode"*|*"OpenCode"*)
+        expected_domain="anthropic.com"
+        ;;
+    *)
+        expected_domain="anthropic.com"
+        ;;
+esac
+
+if [ "$domain" != "$expected_domain" ]; then
+    echo "ERROR: Wrong email domain for model '$model'" >&2
+    echo "  Got:      $email" >&2
+    echo "  Expected: <...@$expected_domain>" >&2
+    exit 1
+fi
+
+exit 0
