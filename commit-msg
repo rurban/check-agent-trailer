@@ -2,21 +2,23 @@
 # commit-msg hook: validate Co-authored-by trailers
 #
 # Format: Co-authored-by: <agent> + <model> <<email>>
-#   agent:  omp, codewhale, Claude, opencode
-#   model:  DeepSeek v4 Pro, Claude Sonnet, etc.
-#   email:  <model-slug>@<model-domain>
 #
-# Domain mapping by model vendor:
-#   DeepSeek   -> @deepseek.com
-#   Claude     -> @anthropic.com
-#   opencode   -> @anthropic.com
+# Known agents:  omp, codewhale, Claude, opencode
 #
-# Install:
-#   ln -sf /path/to/check-agent-trailer/commit-msg .git/hooks/commit-msg
-# Or per repo:
-#   cp commit-msg .git/hooks/commit-msg
-# Or via git config (git >= 2.9):
-#   git config core.hooksPath /path/to/check-agent-trailer
+# Known model vendors and their email domains:
+#   DeepSeek           -> @deepseek.com
+#   Claude / Anthropic -> @anthropic.com
+#   OpenAI / GPT       -> @openai.com
+#   opencode           -> @anthropic.com
+#
+# Model names must include version/descriptor (e.g. "v4 Pro", "Sonnet 4"),
+# not just the bare vendor name (e.g. "DeepSeek" alone is rejected).
+#
+# Install via pre-commit (.pre-commit-config.yaml):
+#   - repo: https://github.com/rurban/check-agent-trailer
+#     rev: v0.1
+#     hooks:
+#       - id: check-agent-trailer
 
 set -euo pipefail
 
@@ -35,71 +37,70 @@ if [ -z "$trailer" ]; then
     exit 1
 fi
 
-# Extract email
+# ── extract fields ──────────────────────────────────────────────
 email=$(echo "$trailer" | sed -n 's/.*<\([^>]*\)>.*/\1/p')
 if [ -z "$email" ]; then
     echo "ERROR: Co-authored-by trailer missing email in <brackets>" >&2
     exit 1
 fi
 
-# Extract the name part (between ": " and " <")
 name=$(echo "$trailer" | sed -n 's/^Co-authored-by: \(.*\) <.*/\1/p')
-
-# Must contain " + " separator between agent and model
 if [[ "$name" != *" + "* ]]; then
     echo "ERROR: Co-authored-by must include both agent and model separated by ' + '" >&2
     echo "  Got:      $name" >&2
     echo "  Expected: <agent> + <model>" >&2
-    echo "  Example:  omp + DeepSeek v4 Pro" >&2
     exit 1
 fi
 
-# Split into agent and model
 agent="${name%% + *}"
 model="${name#* + }"
 
-# Validate agent
-valid_agents="omp codewhale Claude opencode"
-found=0
-for a in $valid_agents; do
-    if [ "$agent" = "$a" ]; then found=1; break; fi
+# ── known agents ─────────────────────────────────────────────────
+known_agents=("omp" "codewhale" "Claude" "opencode")
+agent_ok=0
+for a in "${known_agents[@]}"; do
+    if [ "$agent" = "$a" ]; then agent_ok=1; break; fi
 done
-if [ "$found" -ne 1 ]; then
+if [ "$agent_ok" -ne 1 ]; then
     echo "ERROR: Unknown agent '$agent'" >&2
-    echo "  Valid agents: omp, codewhale, Claude, opencode" >&2
+    echo "  Known agents: ${known_agents[*]}" >&2
     exit 1
 fi
 
-# Validate model is not empty
-if [ -z "$model" ]; then
-    echo "ERROR: Model name is empty after ' + '" >&2
-    exit 1
-fi
-
-# Model must include version/name, not just vendor
-case "$model" in
-    "DeepSeek"|"deepseek"|"Claude"|"claude"|"opencode"|"OpenCode")
-        echo "ERROR: Model name must include version, not just vendor name" >&2
+# ── model must include version, not bare vendor ──────────────────
+bare_vendors=("DeepSeek" "deepseek" "Claude" "claude" "GPT" "gpt" "OpenAI" "openai" "opencode" "OpenCode")
+for bv in "${bare_vendors[@]}"; do
+    if [ "$model" = "$bv" ]; then
+        echo "ERROR: Model name must include version/descriptor, not just vendor" >&2
         echo "  Got:      $model" >&2
-        echo "  Expected: e.g. 'DeepSeek v4 Pro', 'Claude Sonnet 4'" >&2
+        echo "  Expected: e.g. 'DeepSeek v4 Pro', 'Claude Sonnet 4', 'GPT-5'" >&2
         exit 1
-        ;;
-esac
+    fi
+done
 
-# Validate email domain matches model vendor
+# ── email domain → model vendor mapping ──────────────────────────
+# Associative array: glob_pattern -> expected_domain
+declare -A vendor_domains=(
+    ["*DeepSeek*"]="deepseek.com"
+    ["*deepseek*"]="deepseek.com"
+    ["*Claude*"]="anthropic.com"
+    ["*claude*"]="anthropic.com"
+    ["*GPT*"]="openai.com"
+    ["*gpt*"]="openai.com"
+    ["*OpenAI*"]="openai.com"
+    ["*openai*"]="openai.com"
+    ["*opencode*"]="openai.com"
+    ["*OpenCode*"]="openai.com"
+)
+
 domain="${email##*@}"
-
-case "$model" in
-    *"DeepSeek"*|*"deepseek"*)
-        expected_domain="deepseek.com"
-        ;;
-    *"Claude"*|*"claude"*|*"opencode"*|*"OpenCode"*)
-        expected_domain="anthropic.com"
-        ;;
-    *)
-        expected_domain="anthropic.com"
-        ;;
-esac
+expected_domain="anthropic.com"  # default fallback
+for pattern in "${!vendor_domains[@]}"; do
+    if [[ "$model" == $pattern ]]; then
+        expected_domain="${vendor_domains[$pattern]}"
+        break
+    fi
+done
 
 if [ "$domain" != "$expected_domain" ]; then
     echo "ERROR: Wrong email domain for model '$model'" >&2
