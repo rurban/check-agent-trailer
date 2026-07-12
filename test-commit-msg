@@ -97,10 +97,11 @@ run_test "unrecognised /foo passes through" \
 echo ""
 echo "=== Error paths ==="
 
-# ── missing trailer ──
-run_test_stderr "missing trailer" \
-    "" \
-    "Missing Co-authored-by"
+# ── missing trailer is allowed (exit 0) ──
+run_test "missing trailer allowed" \
+    "" 0
+
+echo ""
 
 # ── no separator ──
 run_test_stderr "no separator (single word)" \

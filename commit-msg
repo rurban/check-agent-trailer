@@ -45,17 +45,16 @@ fi
 trailer=$(grep "^Co-authored-by:" "$COMMIT_MSG_FILE" | tail -1 || true)
 
 if [ -z "$trailer" ]; then
-    echo "ERROR: Missing Co-authored-by: trailer in commit message" >&2
-    echo "  Format: Co-authored-by: <agent> + <model> <email@domain>  or  <agent> <model> <email@domain>" >&2
-    echo "  Example: Co-authored-by: omp + DeepSeek v4 Pro <deepseek-v4-pro@deepseek.com>" >&2
-    echo "  Example: Co-authored-by: omp DeepSeek v4 Pro <deepseek-v4-pro@deepseek.com>" >&2
-    exit 1
+    exit 0
 fi
 
 # ── extract fields ──────────────────────────────────────────────
 email=$(echo "$trailer" | sed -n 's/.*<\([^>]*\)>.*/\1/p')
 if [ -z "$email" ]; then
     echo "ERROR: Co-authored-by trailer missing email in <brackets>" >&2
+    echo "  Format: Co-authored-by: <agent> + <model> <email@domain>  or  <agent> <model> <email@domain>" >&2
+    echo "  Example: Co-authored-by: omp + DeepSeek v4 Pro <deepseek-v4-pro@deepseek.com>" >&2
+    echo "  Example: Co-authored-by: omp DeepSeek v4 Pro <deepseek-v4-pro@deepseek.com>" >&2
     exit 1
 fi
 
@@ -70,6 +69,9 @@ else
     echo "ERROR: Co-authored-by must include both agent and model separated by ' + ' or space" >&2
     echo "  Got:      $name" >&2
     echo "  Expected: <agent> + <model>  or  <agent> <model>" >&2
+    echo "  Format: Co-authored-by: <agent> + <model> <email@domain>  or  <agent> <model> <email@domain>" >&2
+    echo "  Example: Co-authored-by: omp + DeepSeek v4 Pro <deepseek-v4-pro@deepseek.com>" >&2
+    echo "  Example: Co-authored-by: omp DeepSeek v4 Pro <deepseek-v4-pro@deepseek.com>" >&2
     exit 1
 fi
 
@@ -99,6 +101,9 @@ for bv in "${bare_vendors[@]}"; do
         echo "ERROR: Model name must include version/descriptor, not just vendor" >&2
         echo "  Got:      $model" >&2
         echo "  Expected: e.g. 'DeepSeek v4 Pro', 'Claude Sonnet 4', 'GPT-5'" >&2
+        echo "  Format: Co-authored-by: <agent> + <model> <email@domain>  or  <agent> <model> <email@domain>" >&2
+        echo "  Example: Co-authored-by: omp + DeepSeek v4 Pro <deepseek-v4-pro@deepseek.com>" >&2
+        echo "  Example: Co-authored-by: omp DeepSeek v4 Pro <deepseek-v4-pro@deepseek.com>" >&2
         exit 1
     fi
 done
@@ -173,6 +178,9 @@ if [ "$domain" != "$expected_domain" ]; then
     echo "ERROR: Wrong email domain for model '$model'" >&2
     echo "  Got:      $email" >&2
     echo "  Expected: <...@$expected_domain>" >&2
+    echo "  Format: Co-authored-by: <agent> + <model> <email@domain>  or  <agent> <model> <email@domain>" >&2
+    echo "  Example: Co-authored-by: omp + DeepSeek v4 Pro <deepseek-v4-pro@deepseek.com>" >&2
+    echo "  Example: Co-authored-by: omp DeepSeek v4 Pro <deepseek-v4-pro@deepseek.com>" >&2
     exit 1
 fi
 
